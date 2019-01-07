@@ -1,0 +1,332 @@
+---
+title: "Practica 2"
+author: "Jonathan Rodriguez"
+date: "5 de enero de 2019"
+output:
+  html_document:
+    number_sections: no
+    toc_float: yes
+    toc: yes
+    toc_depth: 3       
+          
+lang: es
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r librerias, echo=FALSE, warning=FALSE}
+library("knitr", lib.loc="~/R/win-library/3.5")
+library("dplyr", lib.loc="~/R/win-library/3.5")
+library("readr", lib.loc="~/R/win-library/3.5")
+library("rapportools", lib.loc="~/R/win-library/3.5")
+library("nortest", lib.loc="~/R/win-library/3.5")
+library("ggpubr", lib.loc="~/R/win-library/3.5")
+library("car", lib.loc="~/R/win-library/3.5")
+library("corrplot", lib.loc="~/R/win-library/3.5")
+library("caret", lib.loc="~/R/win-library/3.5")
+library("psych", lib.loc="~/R/win-library/3.5")
+```
+
+## Practica 2
+### Enunciado
+En esta práctica se elabora un caso práctico orientado a aprender a identificar los datos relevantes para un proyecto analítico y usar las herramientas de integración, limpieza, validación y análisis de las mismas. El objetivo de esta actividad será el tratamiento de un dataset, que puede ser el creado en la práctica 1 o bien cualquier dataset libre disponible en Kaggle.
+Siguiendo las principales etapas de un proyecto analítico, realizar las diferentes tareas y justificar. 
+
+### Descripción del dataset. ¿Por qué es importante y qué pregunta/problema pretende responder? 
+
+El conjunto de datos seleccionado se han obtenido desde https://www.kaggle.com/aashishjhamtani/automobile-insurancerecoge. Se compone de 40 variables de las cuales se ha descartado una al no contener ningún dato. Se pasan a describir las demás variables de las cuales se descartaran las que no sean objeto de estudio. 
+
+       columna      -         Descripción                
+* months_as_customer-> almacena los meses como cliente     
+* age               -> almacena la edad del cliente        
+* policy_number     -> almacena numero de poliza           
+* policy_bind_date  -> almacena fecha formalización        
+* insured_zip       -> almacena codigo postal              
+* insured_sex       -> almacena sexo cliente               
+* insured_education_level-> almacena nivel educacion cliente
+* insured_occupation  -> almacena ocupacion cliente        
+* insured_relationship-> almacena relación cliente         
+* incident_date       -> almacena fecha incidente          
+* incident_type       -> almacena tipo de incidente        
+* collision_type      -> almacena tipo de incidente        
+* incident_severity   -> almacena tipo de severidad        
+* incident_state      -> almacena estado donde se produjo  
+* incident_city       -> almacena la ciudad incidente      
+* incident_hour_of_the_day  -> almacena la hora incidente  
+* number_of_vehicles_involved-> almacena vehiculos implicados 
+* total_claim_amount     -> almacena cantidada economica total
+* auto_make             -> almacena fabricante vehiculo   
+* auto_model           -> almacena modelo vehiculo        
+* auto_year            -> almacena año vehiculo           
+* fraud_reported       -> almacena si se ha reportado como fraude
+
+Contiene 1000 registros que recogen las reclamaciones realizadas a seguros, perfil del demandante, tipo de vehículos, resultado de la demanda, costes, si ha sido declarado como fraude y demás datos que nos sirven para dar respuesta a distintos tipos de pregunta o problemas. 
+
+Pregunta que podemos resolver con este análisis son:
+
+* Obtener un tipo de perfil de usuario para saber cúal es el que más demanda o defrauda, así ponemos un plus en la contratación del seguro o descuento en caso contrario.
+
+* Si existe una relación entre tipo de accidente y los declarados como fraudes. Con esto podemos clasificar si es problable que un tipo de colisión pueda ser fraulenta y marcarla como revisable por un agente de seguros.
+
+* Análisis de tipos de vehículos con más colisiones, estados, etc. Determina el precio del seguro.
+
+Realizamos la carga de los datos.
+
+```{r lectura}
+df <- as.data.frame(read_csv("C:/temp/insurance_claims.xls", 
+     col_types = cols(`_c39` = col_skip()), 
+     locale = locale()))
+
+```
+
+
+###2. Integración y selección de los datos de interés a analizar. 
+
+* Son variables variables categóricas/cualitativas nominal(factor): insured_sex,insured_occupation,insured_relationship,incident_type,incident_state,incident_city,number_of_vehicles_involved,total_claim_amount,number_of_vehicles_involved,auto_make,auto_model,fraud_reported 
+
+* Son variables cualitativas ordinales(ordered): insured_education_level,collision_type,incident_severity 
+
+* Son variables cuantitativas discretas(integer): months_as_customer,age,policy_number,insured_zip,incident_hour_of_the_day,total_claim_amount,auto_year 
+
+```{r seleccion}
+# selección de los datos
+df_claim <- subset(df,select=c("months_as_customer","age","policy_number","policy_bind_date","insured_zip","insured_sex","insured_education_level","insured_occupation","insured_relationship","incident_date","incident_type","collision_type","incident_severity","incident_state","incident_city","incident_hour_of_the_day","number_of_vehicles_involved","total_claim_amount","auto_make","auto_model","auto_year","fraud_reported"))
+dim(df_claim)
+```
+
+Se selecciona un conjunto de datos para el estudio formado por 22 variables desechando aquellas variables que en el caso que nos ocupan no aportan información relevante. Nos centramos en las variables que contienen datos del tipo de cliente,incidente y vehiculos.
+
+###3. Limpieza de los datos. 
+####3.1. ¿Los datos contienen ceros o elementos vacíos? ¿Cómo gestionarías cada uno de estos casos?  
+Verificadas las variables y con el tipo de formato que les corresponde pasamos a realizar una comprobación más profunda de los datos para detectar valores, nulos, NA, ausentes y tratarlos.
+Se observan en la algunos registros con ceros pero no son considerados valores faltantes.
+Al inspeccionar el conjunto de datos detectamos en la variable (collision_type) existen varios 178 registros codificados con "?" reflejando la ausencia de variables. Para tomar una decisión sobre que hacer analizamos más profundamente a que tipo de datos se refiere y cuales son los valores existentes. Si nos fijamos, en la columna anterior todos estos datos con valores faltantes corresponden al tipo de incidente "vehículo robado" o "coche aparcado". Los daños son menores o triviales lo que cabe pesar que no han tenido una colisión. Por ello, se decide codificarlos como "No collision", ya que no han sufrido una colisión.  
+
+```{r verficar datos}
+# Comprobar estructura conjunto de datos
+str(df_claim)
+head(df_claim)
+tail(df_claim) 
+# verificamos valores
+print(paste("Valores Null", is.null(df_claim),sep = " "))
+print(is.null(df_claim))
+print(paste("Valores Vacios por columnas:" ))
+colSums(sapply(df_claim, is.empty))
+print(paste("Valores NA por columnas:"))
+colSums(sapply(df_claim, is.na))
+print(paste("valores con ?"))
+table(df_claim$collision_type)
+head(df_claim %>% filter(df_claim$collision_type=="?"))
+# registros detectados procedemos a codificar 
+i <- which(df_claim$collision_type=="?")
+df_claim[i,"collision_type"]<-"No collision"
+# comprobamos
+head(df_claim %>% filter(df_claim$collision_type=="No collision"))
+```
+
+Comprobamos la asignación correcta de las clases en la carga de los datos, en caso contrario serán clasificadas con el tipo apropiado.
+
+```{r tipos}
+
+# inicializar tipos
+n.var <- names(df_claim)
+var.factor <- c(6,8,9,11,14,15,17,18,19,20,22)
+var.integer <- c(1,2,3,5,16,21)
+var.ordered <- c(7,12,13)
+var.date <- c(4,10)
+var.tipus <- vector(mode="character",length=ncol(df_claim))
+var.tipus[var.factor] <- "factor"
+var.tipus[var.integer] <- "integer"
+var.tipus[var.ordered] <- "ordered"
+var.tipus[var.date] <- "date"
+
+# Revisar clases de la selección
+res <- sapply(df_claim,class) 
+kable(data.frame(variables=names(res),clase=as.vector(res)))
+var_wrong <- n.var[res != var.tipus]
+var_wrong
+
+# Asignar como factor
+for (i in var.factor) {df_claim[,i] <- as.factor(df_claim[,i])}
+# Asignar como integer
+for (i in var.integer) {df_claim[,i] <- as.integer(df_claim[,i])}
+# Asignar como ordered
+for (i in var.ordered) {df_claim[,i] <- as.ordered(df_claim[,i])}
+# Asignar como Date
+for (i in var.date) {df_claim[,i] <- as.Date(df_claim[,i])}
+
+str(df_claim)
+```
+#### 3.2. Identificación y tratamiento de valores extremos.
+
+Vamos a identificar valores atípicos en variables cuantitativas, para ellos se presenta un boxplot de cada variable cuantitativa. Primero revisamos si existen valores y en caso afirmativo se representa gráficamente. 
+Se han detectado valores extremos en la variable Age, sin embargo son valores totalmente aceptables dentro del rango de edad, nada significativo.
+Las demás variables no tienen sentido revisar valores extremos.
+
+```{r atipica}
+r <- sapply(df_claim,class) 
+r <- which(r=="integer")
+for (i in r){print(boxplot.stats(df_claim[,i])$out)}
+# visualizamos los datos extremos 
+boxplot(df_claim$age, main="Age",col="gray")
+
+```
+
+###4. Análisis de los datos. 
+####4.1. Selección de los grupos de datos que se quieren analizar/comparar (planificación de los análisis a aplicar). 
+
+Nos interesa seleccionar principalmente dos grupos de datos y un tercero que también puede aportar información que se transforme en conocimiento.
+Los grupos son cliente,incidente y vehiculos.
+Grupo de cliente:
+
+* agrupación por sexo (2 niveles)
+```{r sexo}
+claim_male <- df_claim %>% filter(df_claim$insured_sex=="MALE")
+claim_female <- df_claim %>% filter(df_claim$insured_sex=="FEMALE")
+```
+
+*agrupación por fraude (2 niveles)
+```{r fraud}
+claim_fraudy <- df_claim %>% filter(df_claim$fraud_reported=="Y")
+claim_fraudn <- df_claim %>% filter(df_claim$fraud_reported=="N")
+```
+
+Grupo de incidentes:
+* agrupacion por tipo de incidente (4 niveles)
+```{r type}
+claim_multi <- df_claim %>% filter(df_claim$incident_type =="Multi-vehicle Collision")
+claim_parked <- df_claim %>% filter(df_claim$incident_type =="Parked Car")
+claim_single <- df_claim %>% filter(df_claim$incident_type =="Single Vehicle Collision")
+claim_theft <- df_claim %>% filter(df_claim$incident_type =="Vehicle Theft")
+```
+
+* agrupacion numero de vehiculos implicados (4 niveles)
+```{r vehicles}
+claim_one <- df_claim %>% filter(df_claim$number_of_vehicles_involved=="1")
+claim_two <- df_claim %>% filter(df_claim$number_of_vehicles_involved=="2")
+claim_three <- df_claim %>% filter(df_claim$number_of_vehicles_involved=="3")
+claim_four <- df_claim %>% filter(df_claim$number_of_vehicles_involved=="4")
+```
+
+* agrupacion por tipo de colision (4 niveles)
+```{r collision}
+claim_Front <- df_claim %>% filter(df_claim$collision_type =="Front Collision")
+claim_No <- df_claim %>% filter(df_claim$collision_type =="No collision")
+claim_Rear <- df_claim %>% filter(df_claim$collision_type =="Rear Collision")
+claim_Side <- df_claim %>% filter(df_claim$collision_type =="Side Collision")
+```
+
+
+####4.2. Comprobación de la normalidad y homogeneidad de la varianza. 
+
+Para comprobar la normalidad instalamos el paquete Nortest que se componen de diferentes pruebas para comprobar la normalidad en los datos. En ete caso utilizaremos la prueba de Lilliefors (Kolmogorov-Smirnov) es una prueba general para la hipótesis compuesta de
+normalidad con grupo de datos mayor a 30. El estadístico de prueba es la diferencia absoluta máxima entre empírico e hipotético.
+
+
+```{r normalidad}
+res <- sapply(df_claim,class) 
+res <- which(res=="integer")
+# aplicamos el test a las variables las 7 numericas
+
+for (i in res){
+  p <- lillie.test(df_claim[,i])
+  p$data.name <- colnames(df_claim)[i]
+  print(p)
+}
+```
+
+Como podemos comprobar ninguna variable cumple normalidad. 
+
+El supuesto de homogeneidad de varianzas, también conocido como supuesto de homocedasticidad, considera que la varianza es constante en los diferentes niveles de un factor, es decir, entre diferentes grupos. Prodecemos a revisar la homogeniedad de la varianza usando el test de Levene. El test de Levene se puede aplicar con la función leveneTest() del paquete car. Se caracteriza, además de por poder comparar 2 o más poblaciones, por permitir elegir entre diferentes estadísticos de centralidad :mediana (por defecto), media, media truncada. Esto es importante a la hora de contrastar la homocedasticidad dependiendo de si los grupos se distribuyen de forma normal o no. 
+
+
+```{r test Levene}
+leveneTest(y = as.integer(df_claim$fraud_reported), group = df_claim$insured_sex, center = "median")
+```
+Puesto que obtenemos un p-valor superior a 0,05, aceptamos la hipótesis de que las varianzas de ambas muestras son homogéneas.
+
+
+### 4.3. Aplicación de pruebas estadísticas para comparar los grupos de datos. En función de los datos y el objetivo del estudio, aplicar pruebas de contraste de hipótesis, correlaciones, regresiones, etc. 
+
+Para encontrar la correlacion entre todas las variables de datos seleccionados realizaremos una transformación a numericas ya que la correlación trabaja solamente con valores numericos. Utilizaremos el paquete "carret" para crear variables dummys y convertir las variables categoricas a numericas.
+
+```{r correlacion}
+# se transforman las variables
+dmy <- dummyVars(" ~ .", data = df_claim)
+claimstrns <- data.frame(predict(dmy, newdata = df_claim))
+# usamos dos funciones para crear la matix de correlacion
+cor.prob <- function (X, dfr = nrow(X) - 2) {
+  R <- cor(X, use="pairwise.complete.obs")
+  above <- row(R) < col(R)
+  r2 <- R[above]^2
+  Fstat <- r2 * dfr/(1 - r2)
+  R[above] <- 1 - pf(Fstat, 1, dfr)
+  R[row(R) == col(R)] <- NA
+  R
+}
+
+flattenSquareMatrix <- function(m) {
+  if( (class(m) != "matrix") | (nrow(m) != ncol(m))) stop("Must be a square matrix.")
+  if(!identical(rownames(m), colnames(m))) stop("Row and column names must be equal.")
+  ut <- upper.tri(m)
+  data.frame(i = rownames(m)[row(m)[ut]],
+             j = rownames(m)[col(m)[ut]],
+             cor=t(m)[ut],
+             p=m[ut])
+}
+# representamos las correlaciones
+corMasterList <- flattenSquareMatrix (cor.prob(claimstrns))
+print(head(corMasterList,10))
+
+corList <- corMasterList[order(corMasterList$cor),]
+kable(head(corList,10))
+
+```
+
+Representamos las variables más correlacionadas con denuncia fraudulenta observando que las variables más relevante son sexo, tipo de colision, tipo de incidente y numero de vehículos involucrados.
+
+```{r regresion}
+# seleccionamos las variables que nos interesan
+
+df_reg <- df %>% select("fraud_reported","insured_sex","collision_type","incident_type","number_of_vehicles_involved") 
+dmy <- dummyVars(" ~ .", data = df_reg)
+claimreg <- data.frame(predict(dmy, newdata = df_reg))
+
+# Aplicamos el modelo de regresion  
+model <- (lm(formula = fraud_reportedY  ~ insured_sexMALE + collision_type. + number_of_vehicles_involved + incident_typeMulti.vehicle.Collision + incident_typeParked.Car, data = claimreg))
+summary (model)
+```
+
+
+El resultado indica que el modelo de regresión múltiple explica tan solo el 3% de la variabilidad de clasificar un accidente como fraudulento. No parece ser un modelo acertado. Por ello debemos volver a evaluar si el conjunto de datos es el adecuado.
+Evaluando el modelo obtenido con la funcion "step".
+```{r evaluar}
+step(object = model, direction = "both", trace = 1)
+```
+
+Para el contraste de hipotesis se plantea si un accidente es fraulento o no dependiendo del sexo.
+Así, se plantea el siguiente contraste de hipótesis de dos muestras sobre la diferencia de medias, el cual es unilateral atendiendo a la formulación de la hipótesis alternativa:
+*H0 : µ1−µ2 =0 
+*H1 : µ1−µ2 < 0 
+donde µ1 es la media de la población de la que se extrae la primera muestra y µ2 es la media de la población de la que extrae la segunda.Se toma α =0,05. 
+```{r hipotesis}
+
+df_claim$fraud_reported <- if_else(df_claim$fraud_reported=="Y", 1, 0)
+t.test(df_claim$fraud_reported, mu=TRUE, alternative = "less") 
+```
+Puesto que obtenemos un p-valor menor que el valor de signiﬁcación ﬁjado, rechazamos la hipótesis nula. Por lo cual, la declaración de un un accidente como fraude no depende del sexo.
+
+
+###5. Representación de los resultados a partir de tablas y gráficas. 
+
+
+```{r grafica}
+# representacion grafica
+pairs(fraud_reportedY  ~ insured_sexMALE + collision_type. + number_of_vehicles_involved + incident_typeMulti.vehicle.Collision + incident_typeParked.Car, data = claimreg, main=" Matriz de Dispersión del modelo")
+```
+###6.Resolución del problema. A partir de los resultados obtenidos, ¿cuáles son las conclusiones? ¿Los resultados permiten responder al problema? 
+
+Las conclusiones obtenidas nos indican que debemos revisar desde las variables seleccionadas a los modelos aplicados. Los resultados no han sido nada concluyentes y no se ha podido responder con claridad a las cuestiones planteadas. 
+
